@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>반디의 에코 리필 런!</title>
+    <style>
+        body { margin: 0; padding: 0; background-color: #f4f9f4; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: 'Pretendard', 'Malgun Gothic', sans-serif; overflow: hidden; }
+        #game-container { position: relative; width: 100%; max-width: 400px; height: 100vh; max-height: 800px; background-color: #e0f2f1; overflow: hidden; box-shadow: 0 0 20px rgba(0,0,0,0.1); }
+        canvas { display: block; width: 100%; height: 100%; }
+        
+        .ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; background: rgba(255, 255, 255, 0.9); z-index: 10; text-align: center; padding: 20px; box-sizing: border-box; }
+        .hidden { display: none !important; }
+        
+        h1 { color: #2e7d32; margin-bottom: 10px; font-size: 28px; }
+        p { color: #555; line-height: 1.5; margin-bottom: 20px; font-size: 16px; line-height: 1.4;}
+        
+        .btn { background-color: #2e7d32; color: white; border: none; padding: 15px 30px; font-size: 18px; border-radius: 30px; cursor: pointer; font-weight: bold; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: transform 0.1s; }
+        .btn:active { transform: scale(0.95); }
+        
+        .coupon-box { background: #fffde7; border: 2px dashed #fbc02d; padding: 15px; border-radius: 10px; margin: 20px 0; width: 80%; }
+        .coupon-code { font-size: 24px; font-weight: bold; color: #d32f2f; margin: 10px 0; letter-spacing: 2px;}
+        
+        #hud { position: absolute; top: 10px; left: 0; width: 100%; padding: 0 20px; box-sizing: border-box; display: flex; justify-content: space-between; z-index: 5; pointer-events: none; font-weight: bold; font-size: 20px; color: #333; text-shadow: 1px 1px 2px white;}
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <!-- 게임 HUD (점수, 시간) -->
+    <div id="hud" class="hidden">
+        <span id="score-board">점수: 0</span>
+        <span id="time-board">20초</span>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- 시작 화면 -->
+    <div id="start-screen" class="ui-layer">
+        <h1>반디의<br>에코 리필 런!</h1>
+        <p>친환경 re.feeel 아이템(💧,✨)을 먹고<br>오염물질과 쓰레기(🥫,🛢️)는 피하세요!</p>
+        <p><strong>500점 이상 달성 시<br>시크릿 쿠폰 지급! 🎁</strong></p>
+        <button class="btn" onclick="startGame()">게임 시작</button>
+    </div>
+
+    <!-- 결과 화면 -->
+    <div id="end-screen" class="ui-layer hidden">
+        <h1 id="end-title">게임 종료</h1>
+        <p id="end-score" style="font-size: 20px; font-weight: bold;"></p>
+        
+        <div id="coupon-area" class="coupon-box hidden">
+            <p style="margin:0; color:#f57f17; font-weight:bold;">🎉 미션 성공! 시크릿 쿠폰 🎉</p>
+            <div class="coupon-code" id="coupon-text">REFEEEL2026</div>
+            <button class="btn" style="padding: 10px 20px; font-size: 14px;" onclick="copyCoupon()">쿠폰 복사하기</button>
+        </div>
+        
+        <p id="fail-msg" class="hidden" style="color: #d32f2f; font-weight:bold;">앗! 500점을 넘지 못했어요.<br>다시 도전해보세요!</p>
+        
+        <button class="btn" style="background-color:#555; margin-top: 10px;" onclick="resetGame()">다시 하기</button>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const container = document.getElementById('game-container');
+
+    // 캔버스 사이즈 설정 (모바일 맞춤)
+    function resizeCanvas() {
+        canvas.width = container.clientWidth;
+        canvas.height = container.clientHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    // 게임 변수
+    let gameLoop;
+    let isPlaying = false;
+    let score = 0;
+    let timeLeft = 20; // 20초 게임으로 변경
+    let timerInterval;
+
+    // 플레이어 (반디) 설정
+    const player = {
+        x: canvas.width / 2,
+        y: canvas.height - 80,
+        size: 50,
+        emoji: '🐻' 
+    };
+
+    // 아이템 설정 (직관성 강화)
+    let items = [];
+    const goodItems = ['💧', '✨']; 
+    const badItems = ['🥫', '🚬', '🛢️', '🦴']; 
+
+    // 조작 (터치 & 마우스 드래그)
+    let isDragging = false;
+    canvas.addEventListener('mousedown', () => isDragging = true);
+    canvas.addEventListener('mouseup', () => isDragging = false);
+    canvas.addEventListener('mousemove', (e) => {
+        if (isDragging && isPlaying) movePlayer(e.clientX || e.touches[0].clientX);
+    });
+    
+    canvas.addEventListener('touchstart', (e) => isDragging = true, {passive: false});
+    canvas.addEventListener('touchend', () => isDragging = false);
+    canvas.addEventListener('touchmove', (e) => {
+        if (isPlaying) {
+            e.preventDefault(); 
+            movePlayer(e.touches[0].clientX);
+        }
+    }, {passive: false});
+
+    function movePlayer(clientX) {
+        const rect = canvas.getBoundingClientRect();
+        let newX = clientX - rect.left;
+        if (newX < player.size/2) newX = player.size/2;
+        if (newX > canvas.width - player.size/2) newX = canvas.width - player.size/2;
+        player.x = newX;
+    }
+
+    function createItem() {
+        const isGood = Math.random() > 0.4; 
+        const emojiList = isGood ? goodItems : badItems;
+        items.push({
+            x: Math.random() * (canvas.width - 40) + 20,
+            y: -30,
+            size: 30,
+            speed: Math.random() * 3 + 2,
+            emoji: emojiList[Math.floor(Math.random() * emojiList.length)],
+            isGood: isGood
+        });
+    }
+
+    function update() {
+        if (!isPlaying) return;
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // 플레이어 그리기
+        ctx.font = `${player.size}px Arial`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(player.emoji, player.x, player.y);
+
+        // 아이템 업데이트 및 그리기
+        for (let i = 0; i < items.length; i++) {
+            let item = items[i];
+            item.y += item.speed;
+
+            ctx.font = `${item.size}px Arial`;
+            ctx.fillText(item.emoji, item.x, item.y);
+
+            // 충돌 감지
+            const dist = Math.hypot(player.x - item.x, player.y - item.y);
+            if (dist < (player.size/2 + item.size/2)) {
+                if (item.isGood) {
+                    score += 100;
+                } else {
+                    score -= 200;
+                    if(score < 0) score = 0;
+                }
+                document.getElementById('score-board').innerText = `점수: ${score}`;
+                items.splice(i, 1);
+                i--;
+            }
+            // 화면 밖으로 나간 아이템 제거
+            else if (item.y > canvas.height + 30) {
+                items.splice(i, 1);
+                i--;
+            }
+        }
+
+        if (Math.random() < 0.05) createItem();
+
+        gameLoop = requestAnimationFrame(update);
+    }
+
+    function startGame() {
+        document.getElementById('start-screen').classList.add('hidden');
+        document.getElementById('end-screen').classList.add('hidden');
+        document.getElementById('hud').classList.remove('hidden');
+        
+        score = 0;
+        timeLeft = 20; // 20초로 리셋
+        items = [];
+        player.x = canvas.width / 2;
+        document.getElementById('score-board').innerText = `점수: 0`;
+        document.getElementById('time-board').innerText = `20초`;
+
+        isPlaying = true;
+        update();
+
+        timerInterval = setInterval(() => {
+            timeLeft--;
+            document.getElementById('time-board').innerText = `${timeLeft}초`;
+            
+            if (timeLeft <= 0) {
+                endGame();
+            }
+        }, 1000);
+    }
+
+    function endGame() {
+        isPlaying = false;
+        clearInterval(timerInterval);
+        cancelAnimationFrame(gameLoop);
+
+        document.getElementById('hud').classList.add('hidden');
+        document.getElementById('end-screen').classList.remove('hidden');
+        document.getElementById('end-score').innerText = `최종 점수: ${score}점`;
+
+        const couponArea = document.getElementById('coupon-area');
+        const failMsg = document.getElementById('fail-msg');
+
+        // 500점 이상이면 쿠폰 지급
+        if (score >= 500) {
+            couponArea.classList.remove('hidden');
+            failMsg.classList.add('hidden');
+            document.getElementById('end-title').innerText = "미션 성공!";
+        } else {
+            couponArea.classList.add('hidden');
+            failMsg.classList.remove('hidden');
+            document.getElementById('end-title').innerText = "게임 오버";
+        }
+    }
+
+    function resetGame() {
+        document.getElementById('end-screen').classList.add('hidden');
+        document.getElementById('start-screen').classList.remove('hidden');
+    }
+
+    function copyCoupon() {
+        const code = document.getElementById('coupon-text').innerText;
+        navigator.clipboard.writeText(code).then(() => {
+            alert("쿠폰 코드가 복사되었습니다! 결제 시 사용해주세요.");
+        }).catch(err => {
+            alert("복사 실패. 쿠폰 코드를 직접 메모해주세요.");
+        });
+    }
+</script>
+
+</body>
+</html>

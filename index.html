@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>반디의 에코 리필 런!</title>
     <style>
-        body { margin: 0; padding: 0; background-color: #f4f9f4; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: 'Pretendard', 'Malgun Gothic', sans-serif; overflow: hidden; }
+        body { margin: 0; padding: 0; background-color: #f4f9f4; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: 'Pretendard', 'Malgun Gothic', sans-serif; overflow: hidden; touch-action: none; }
         #game-container { position: relative; width: 100%; max-width: 400px; height: 100vh; max-height: 800px; background-color: #e0f2f1; overflow: hidden; box-shadow: 0 0 20px rgba(0,0,0,0.1); }
         canvas { display: block; width: 100%; height: 100%; }
         
@@ -22,12 +22,13 @@
         .coupon-code { font-size: 24px; font-weight: bold; color: #d32f2f; margin: 10px 0; letter-spacing: 2px;}
         
         #hud { position: absolute; top: 10px; left: 0; width: 100%; padding: 0 20px; box-sizing: border-box; display: flex; justify-content: space-between; z-index: 5; pointer-events: none; font-weight: bold; font-size: 20px; color: #333; text-shadow: 1px 1px 2px white;}
+        #high-score-display { font-size: 18px; color: #1565c0; font-weight: bold; margin-top: 5px; margin-bottom: 15px; }
     </style>
 </head>
 <body>
 
 <div id="game-container">
-    <!-- 게임 HUD (점수, 시간) -->
+    <!-- 게임 HUD -->
     <div id="hud" class="hidden">
         <span id="score-board">점수: 0</span>
         <span id="time-board">20초</span>
@@ -39,14 +40,16 @@
     <div id="start-screen" class="ui-layer">
         <h1>반디의<br>에코 리필 런!</h1>
         <p>친환경 re.feeel 아이템(💧,✨)을 먹고<br>오염물질과 쓰레기(🥫,🛢️)는 피하세요!</p>
-        <p><strong>500점 이상 달성 시<br>시크릿 쿠폰 지급! 🎁</strong></p>
+        <p><strong>1,000점 이상 달성 시<br>시크릿 쿠폰 지급! 🎁</strong></p>
         <button class="btn" onclick="startGame()">게임 시작</button>
     </div>
 
     <!-- 결과 화면 -->
     <div id="end-screen" class="ui-layer hidden">
         <h1 id="end-title">게임 종료</h1>
-        <p id="end-score" style="font-size: 20px; font-weight: bold;"></p>
+        <p id="end-score" style="font-size: 24px; font-weight: bold; margin-bottom: 5px;"></p>
+        <!-- 최고 기록 노출 영역 추가 -->
+        <p id="high-score-display"></p>
         
         <div id="coupon-area" class="coupon-box hidden">
             <p style="margin:0; color:#f57f17; font-weight:bold;">🎉 미션 성공! 시크릿 쿠폰 🎉</p>
@@ -54,7 +57,7 @@
             <button class="btn" style="padding: 10px 20px; font-size: 14px;" onclick="copyCoupon()">쿠폰 복사하기</button>
         </div>
         
-        <p id="fail-msg" class="hidden" style="color: #d32f2f; font-weight:bold;">앗! 500점을 넘지 못했어요.<br>다시 도전해보세요!</p>
+        <p id="fail-msg" class="hidden" style="color: #d32f2f; font-weight:bold;">앗! 1,000점을 넘지 못했어요.<br>다시 도전해보세요!</p>
         
         <button class="btn" style="background-color:#555; margin-top: 10px;" onclick="resetGame()">다시 하기</button>
     </div>
@@ -65,35 +68,41 @@
     const ctx = canvas.getContext('2d');
     const container = document.getElementById('game-container');
 
-    // 캔버스 사이즈 설정 (모바일 맞춤)
-    function resizeCanvas() {
-        canvas.width = container.clientWidth;
-        canvas.height = container.clientHeight;
-    }
-    window.addEventListener('resize', resizeCanvas);
-    resizeCanvas();
-
     // 게임 변수
     let gameLoop;
     let isPlaying = false;
     let score = 0;
-    let timeLeft = 20; // 20초 게임으로 변경
+    let timeLeft = 20; 
     let timerInterval;
+    
+    // 최고 기록 (브라우저 로컬 스토리지 활용)
+    let highScore = localStorage.getItem('refeeelHighScore') || 0;
 
-    // 플레이어 (반디) 설정
+    // 플레이어 설정
     const player = {
-        x: canvas.width / 2,
-        y: canvas.height - 80,
+        x: 0, 
+        y: 0,
         size: 50,
         emoji: '🐻' 
     };
 
-    // 아이템 설정 (직관성 강화)
+    // 캔버스 사이즈 설정 (모바일 맞춤 보정)
+    function resizeCanvas() {
+        canvas.width = container.clientWidth;
+        canvas.height = container.clientHeight;
+        // 모바일 주소창 이슈 방지: 화면 하단에서 100px 위로 강제 고정
+        player.y = canvas.height - 100; 
+        if(!isPlaying) player.x = canvas.width / 2;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    // 아이템 설정
     let items = [];
     const goodItems = ['💧', '✨']; 
     const badItems = ['🥫', '🚬', '🛢️', '🦴']; 
 
-    // 조작 (터치 & 마우스 드래그)
+    // 조작
     let isDragging = false;
     canvas.addEventListener('mousedown', () => isDragging = true);
     canvas.addEventListener('mouseup', () => isDragging = false);
@@ -125,7 +134,7 @@
             x: Math.random() * (canvas.width - 40) + 20,
             y: -30,
             size: 30,
-            speed: Math.random() * 3 + 2,
+            speed: Math.random() * 4 + 3, // 난이도 상향에 따른 속도 약간 증가
             emoji: emojiList[Math.floor(Math.random() * emojiList.length)],
             isGood: isGood
         });
@@ -136,21 +145,20 @@
 
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // 플레이어 그리기
-        ctx.font = `${player.size}px Arial`;
+        // 플레이어 렌더링 (모바일 이모지 폰트 호환성 추가)
+        ctx.font = `${player.size}px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(player.emoji, player.x, player.y);
 
-        // 아이템 업데이트 및 그리기
+        // 아이템 렌더링
         for (let i = 0; i < items.length; i++) {
             let item = items[i];
             item.y += item.speed;
 
-            ctx.font = `${item.size}px Arial`;
+            ctx.font = `${item.size}px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif`;
             ctx.fillText(item.emoji, item.x, item.y);
 
-            // 충돌 감지
             const dist = Math.hypot(player.x - item.x, player.y - item.y);
             if (dist < (player.size/2 + item.size/2)) {
                 if (item.isGood) {
@@ -163,14 +171,13 @@
                 items.splice(i, 1);
                 i--;
             }
-            // 화면 밖으로 나간 아이템 제거
             else if (item.y > canvas.height + 30) {
                 items.splice(i, 1);
                 i--;
             }
         }
 
-        if (Math.random() < 0.05) createItem();
+        if (Math.random() < 0.08) createItem(); // 아이템 생성 빈도 증가
 
         gameLoop = requestAnimationFrame(update);
     }
@@ -181,9 +188,10 @@
         document.getElementById('hud').classList.remove('hidden');
         
         score = 0;
-        timeLeft = 20; // 20초로 리셋
+        timeLeft = 20; 
         items = [];
         player.x = canvas.width / 2;
+        
         document.getElementById('score-board').innerText = `점수: 0`;
         document.getElementById('time-board').innerText = `20초`;
 
@@ -205,15 +213,23 @@
         clearInterval(timerInterval);
         cancelAnimationFrame(gameLoop);
 
+        // 최고 점수 갱신 로직
+        if (score > highScore) {
+            highScore = score;
+            localStorage.setItem('refeeelHighScore', highScore);
+        }
+
         document.getElementById('hud').classList.add('hidden');
         document.getElementById('end-screen').classList.remove('hidden');
+        
         document.getElementById('end-score').innerText = `최종 점수: ${score}점`;
+        document.getElementById('high-score-display').innerText = `🏆 현재 1등 스코어: ${highScore}점`;
 
         const couponArea = document.getElementById('coupon-area');
         const failMsg = document.getElementById('fail-msg');
 
-        // 500점 이상이면 쿠폰 지급
-        if (score >= 500) {
+        // 1000점 이상 쿠폰 지급
+        if (score >= 1000) {
             couponArea.classList.remove('hidden');
             failMsg.classList.add('hidden');
             document.getElementById('end-title').innerText = "미션 성공!";
@@ -233,6 +249,8 @@
         const code = document.getElementById('coupon-text').innerText;
         navigator.clipboard.writeText(code).then(() => {
             alert("쿠폰 코드가 복사되었습니다! 결제 시 사용해주세요.");
+            // MD's Point: 여기서 실제 기획전 랜딩 URL로 이동시키는 로직을 넣으면 베스트입니다.
+            // window.location.href = "https://자사몰링크.com/refeeel"; 
         }).catch(err => {
             alert("복사 실패. 쿠폰 코드를 직접 메모해주세요.");
         });
